@@ -13,13 +13,13 @@ A pre-commit hook runner written in Rust, compatible with the Python pre-commit 
 
 The project is organized as a Cargo workspace with multiple atomic crates:
 
-- **pre-commit-core**: Shared types, traits, and error handling
-- **pre-commit-parser**: YAML configuration parsing and validation
-- **pre-commit-dag**: Dependency graph construction and topological sorting
-- **pre-commit-executor-sync**: Sequential hook execution
-- **pre-commit-executor-parallel**: Parallel hook execution with dependency resolution
-- **pre-commit-cli**: User-friendly command-line interface
-- **pre-commit-ci**: CI-optimized binary with JSON output
+- [**pre-commit-core**](crates/core): Shared types, traits, and error handling
+- [**pre-commit-parser**](crates/parser): YAML configuration parsing and validation
+- [**pre-commit-dag**](crates/dag): Dependency graph construction and topological sorting
+- [**pre-commit-executor-sync**](crates/executor-sync): Sequential hook execution
+- [**pre-commit-executor-parallel**](crates/executor-parallel): Parallel hook execution with dependency resolution
+- [**pre-commit-cli**](crates/cli): User-friendly command-line interface
+- [**pre-commit-ci**](crates/ci): CI-optimized binary with JSON output
 
 ## Installation
 
