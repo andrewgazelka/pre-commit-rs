@@ -1,16 +1,13 @@
 # pre-commit-rs
 
-A fast, parallel pre-commit hook runner written in Rust, compatible with the Python pre-commit framework configuration format.
+A pre-commit hook runner written in Rust, compatible with the Python pre-commit framework configuration format.
 
 ## Features
 
-- **Blazingly fast**: Written in Rust for maximum performance
-- **Parallel execution**: Run hooks in parallel while respecting dependencies
-- **DAG-based scheduling**: Automatically builds and executes dependency graphs
-- **Python pre-commit compatible**: Uses the same `.pre-commit-config.yaml` format
-- **Atomic crates**: Highly modular and testable architecture
-- **CI-friendly**: JSON and human-readable output formats
-- **Comprehensive testing**: Extensive test coverage for all components
+- Parallel hook execution with dependency resolution
+- Uses `.pre-commit-config.yaml` format
+- JSON output for CI environments
+- Modular crate architecture
 
 ## Architecture
 
@@ -164,11 +161,7 @@ jobs:
 
 ## Performance
 
-Thanks to Rust's performance and parallel execution, pre-commit-rs significantly outperforms the Python implementation:
-
-- **Parallel execution**: Hooks without dependencies run concurrently
-- **Zero-overhead abstractions**: Rust's compile-time optimizations
-- **Efficient DAG scheduling**: Smart execution planning
+Independent hooks run concurrently while respecting dependencies via DAG scheduling.
 
 ## Development
 
@@ -200,11 +193,9 @@ cargo run --package pre-commit-ci -- --format json
 
 ## Design Principles
 
-1. **Functional composition**: Pure functions where possible
-2. **Atomic crates**: Each crate has a single, well-defined responsibility
-3. **Comprehensive testing**: Every component is thoroughly tested
-4. **Type safety**: Leverage Rust's type system for correctness
-5. **Clear separation**: Planning (DAG) is separate from execution
+1. Atomic crates with single responsibilities
+2. DAG planning separate from execution
+3. Type-safe hook scheduling
 
 ## License
 
