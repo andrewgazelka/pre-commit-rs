@@ -1,0 +1,77 @@
+name: 'Setup pre-commit-ci'
+description: 'Download pre-commit-ci binary from GitHub releases'
+author: 'andrewgazelka'
+
+inputs:
+  version:
+    description: 'Version to download (default: latest)'
+    required: false
+    default: 'latest'
+  token:
+    description: 'GitHub token for API requests (avoids rate limits)'
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  binary_path:
+    description: 'Path to the downloaded pre-commit-ci binary'
+    value: ${{ steps.download.outputs.path }}
+  version:
+    description: 'The version that was downloaded'
+    value: ${{ steps.download.outputs.version }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Detect platform
+      id: platform
+      shell: bash
+      run: |
+        case "$RUNNER_OS" in
+          Linux)
+            if [ "$RUNNER_ARCH" = "X64" ]; then
+              echo "target=x86_64-unknown-linux-gnu" >> $GITHUB_OUTPUT
+            elif [ "$RUNNER_ARCH" = "ARM64" ]; then
+              echo "target=aarch64-unknown-linux-gnu" >> $GITHUB_OUTPUT
+            fi
+            ;;
+          macOS)
+            if [ "$RUNNER_ARCH" = "X64" ]; then
+              echo "target=x86_64-apple-darwin" >> $GITHUB_OUTPUT
+            elif [ "$RUNNER_ARCH" = "ARM64" ]; then
+              echo "target=aarch64-apple-darwin" >> $GITHUB_OUTPUT
+            fi
+            ;;
+          *)
+            echo "Unsupported OS: $RUNNER_OS"
+            exit 1
+            ;;
+        esac
+
+    - name: Download pre-commit-ci
+      id: download
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+      run: |
+        VERSION="${{ inputs.version }}"
+        TARGET="${{ steps.platform.outputs.target }}"
+
+        if [ "$VERSION" = "latest" ]; then
+          URL="https://github.com/andrewgazelka/pre-commit/releases/latest/download/pre-commit-ci-${TARGET}"
+        else
+          URL="https://github.com/andrewgazelka/pre-commit/releases/download/${VERSION}/pre-commit-ci-${TARGET}"
+        fi
+
+        echo "Downloading from: $URL"
+        curl -L "$URL" -o pre-commit-ci
+        chmod +x pre-commit-ci
+
+        echo "path=$(pwd)/pre-commit-ci" >> $GITHUB_OUTPUT
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+        ./pre-commit-ci --version
+
+branding:
+  icon: 'check-circle'
+  color: 'green'
