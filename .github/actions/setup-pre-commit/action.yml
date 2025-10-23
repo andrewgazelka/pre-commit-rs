@@ -70,7 +70,7 @@ runs:
         echo "path=$(pwd)/pre-commit-ci" >> $GITHUB_OUTPUT
         echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-        ./pre-commit-ci --version
+        echo "Successfully downloaded pre-commit-ci"
 
 branding:
   icon: 'check-circle'

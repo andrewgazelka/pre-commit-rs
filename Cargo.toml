@@ -42,3 +42,5 @@ owo-colors = "4.1"
 lto = true
 codegen-units = 1
 strip = true
+opt-level = "z"
+panic = "abort"
