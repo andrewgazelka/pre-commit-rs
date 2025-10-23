@@ -1,0 +1,13 @@
+[package]
+name = "pre-commit-executor-sync"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+pre-commit-core = { workspace = true }
+regex = { workspace = true }
+glob = { workspace = true }
+
+[dev-dependencies]

@@ -1,0 +1,21 @@
+repos:
+  - repo: local
+    hooks:
+      - id: echo-hello
+        name: Echo Hello
+        entry: echo "Hello from hook 1"
+        language: system
+        pass_filenames: false
+      - id: echo-world
+        name: Echo World
+        entry: echo "World from hook 2"
+        language: system
+        pass_filenames: false
+        depends_on:
+          - echo-hello
+      - id: echo-rust
+        name: Echo Rust
+        entry: echo "Testing Rust files"
+        language: system
+        files: \.rs$
+        pass_filenames: false

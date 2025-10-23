@@ -1,0 +1,39 @@
+name: Example Usage
+
+# This workflow demonstrates how to use pre-commit-rs in CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  pre-commit:
+    name: Run pre-commit hooks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Download pre-commit-ci
+        run: |
+          # In production, download from releases
+          # curl -L https://github.com/andrewgazelka/pre-commit-rs/releases/latest/download/pre-commit-ci-x86_64-unknown-linux-gnu -o pre-commit-ci
+          # For this example, we'll build it
+          cargo build --release --package pre-commit-ci
+          cp target/release/pre-commit-ci ./pre-commit-ci
+          chmod +x pre-commit-ci
+
+      - name: Run hooks with JSON output
+        run: |
+          ./pre-commit-ci --parallel --format json > results.json
+          cat results.json
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pre-commit-results
+          path: results.json

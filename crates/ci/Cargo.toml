@@ -1,0 +1,22 @@
+[package]
+name = "pre-commit-ci"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "pre-commit-ci"
+path = "src/main.rs"
+
+[dependencies]
+pre-commit-core = { workspace = true }
+pre-commit-parser = { workspace = true }
+pre-commit-dag = { workspace = true }
+pre-commit-executor-sync = { workspace = true }
+pre-commit-executor-parallel = { workspace = true }
+clap = { workspace = true }
+anyhow = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
