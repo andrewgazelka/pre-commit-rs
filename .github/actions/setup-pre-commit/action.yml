@@ -58,9 +58,9 @@ runs:
         TARGET="${{ steps.platform.outputs.target }}"
 
         if [ "$VERSION" = "latest" ]; then
-          URL="https://github.com/andrewgazelka/pre-commit/releases/latest/download/pre-commit-ci-${TARGET}"
+          URL="https://github.com/andrewgazelka/pre-commit-rs/releases/latest/download/pre-commit-ci-${TARGET}"
         else
-          URL="https://github.com/andrewgazelka/pre-commit/releases/download/${VERSION}/pre-commit-ci-${TARGET}"
+          URL="https://github.com/andrewgazelka/pre-commit-rs/releases/download/${VERSION}/pre-commit-ci-${TARGET}"
         fi
 
         echo "Downloading from: $URL"
