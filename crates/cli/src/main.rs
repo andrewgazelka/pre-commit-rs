@@ -316,7 +316,10 @@ fn execute_with_live_status(
     })
 }
 
-async fn execute_hook_with_id(hook: Hook, files: Vec<PathBuf>) -> (String, pre_commit_core::HookResult) {
+async fn execute_hook_with_id(
+    hook: Hook,
+    files: Vec<PathBuf>,
+) -> (String, pre_commit_core::HookResult) {
     use regex::Regex;
     use std::time::Instant;
     use tokio::process::Command;
