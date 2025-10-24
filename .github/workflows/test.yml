@@ -4,8 +4,8 @@ on:
   workflow_call:
 
 jobs:
-  test:
-    name: Test
+  pre-commit:
+    name: Run pre-commit checks
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -13,29 +13,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Run tests
-        run: cargo test --workspace --verbose
-
-  clippy:
-    name: Clippy
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy
+          components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-      - name: Run clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
 
-  fmt:
-    name: Format
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
-      - name: Check formatting
-        run: cargo fmt --all -- --check
+      - name: Setup pre-commit-ci
+        uses: ./.github/actions/setup-pre-commit
+
+      - name: Run pre-commit hooks
+        run: ./pre-commit-ci --parallel
