@@ -177,7 +177,7 @@ fn run_hooks(config_path: PathBuf, sequential: bool, files: Vec<PathBuf>) -> Res
 
     // Display results (only show output for failing hooks)
     for hook_result in &result.hooks {
-        let status = if hook_result.success { "✓" } else { "✗" };
+        let status = if hook_result.success { "✅" } else { "❌" };
         println!(
             "{} {} ({}ms)",
             status, hook_result.hook_id, hook_result.duration_ms
@@ -204,89 +204,109 @@ fn run_hooks(config_path: PathBuf, sequential: bool, files: Vec<PathBuf>) -> Res
     }
 }
 
+enum StatusUpdate {
+    Running(String),
+    Completed(String, bool), // hook_id, success
+    Stop,
+}
+
 fn execute_with_live_status(
     plan: pre_commit_core::ExecutionPlan,
     hooks: &[Hook],
     files: &[PathBuf],
 ) -> Result<pre_commit_core::ExecutionResult> {
     use futures::stream::{FuturesUnordered, StreamExt};
-    use std::sync::{Arc, Mutex};
+    use std::sync::mpsc;
     use std::time::{Duration, Instant};
 
-    // Track status of all hooks (shared across threads)
-    let statuses: Arc<Mutex<HashMap<String, HookStatus>>> = Arc::new(Mutex::new(HashMap::new()));
-    for hook in hooks {
-        statuses.lock().unwrap().insert(hook.id.clone(), HookStatus::Pending);
-    }
-
     let start = Instant::now();
-    let all_results = Arc::new(Mutex::new(Vec::new()));
+
+    // Channel for status updates
+    let (status_tx, status_rx) = mpsc::channel::<StatusUpdate>();
 
     // Print initial status (all pending) to reserve space
     print_initial_status(hooks);
 
-    // Start background thread for continuous animation updates
-    let statuses_clone = Arc::clone(&statuses);
+    // Start animation thread
     let hooks_clone = hooks.to_vec();
-    let should_stop = Arc::new(Mutex::new(false));
-    let should_stop_clone = Arc::clone(&should_stop);
-
     let animation_thread = std::thread::spawn(move || {
+        let mut statuses: HashMap<String, HookStatus> = HashMap::new();
+        for hook in &hooks_clone {
+            statuses.insert(hook.id.clone(), HookStatus::Pending);
+        }
+
         loop {
-            if *should_stop_clone.lock().unwrap() {
-                break;
+            // Check for status updates (non-blocking)
+            while let Ok(update) = status_rx.try_recv() {
+                match update {
+                    StatusUpdate::Running(hook_id) => {
+                        statuses.insert(hook_id, HookStatus::Running);
+                    }
+                    StatusUpdate::Completed(hook_id, success) => {
+                        statuses.insert(
+                            hook_id,
+                            if success {
+                                HookStatus::Success
+                            } else {
+                                HookStatus::Failed
+                            },
+                        );
+                    }
+                    StatusUpdate::Stop => return,
+                }
             }
 
-            let statuses = statuses_clone.lock().unwrap();
+            // Update display
             display_inline_status(&statuses, &hooks_clone);
-            drop(statuses);
 
             std::thread::sleep(Duration::from_millis(100));
         }
     });
 
-    // Create runtime for async execution
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    let statuses_clone = Arc::clone(&statuses);
-    let all_results_clone = Arc::clone(&all_results);
+    // Execute hooks in separate thread
+    let files = files.to_vec();
+    let status_tx_clone = status_tx.clone();
+    let execution_thread = std::thread::spawn(move || {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let mut all_results = Vec::new();
 
-    rt.block_on(async {
-        // Execute each level sequentially
-        for level in &plan.levels {
-            let mut futures = FuturesUnordered::new();
+        rt.block_on(async {
+            // Execute each level sequentially
+            for level in &plan.levels {
+                let mut futures = FuturesUnordered::new();
 
-            // Mark all hooks in this level as running
-            {
-                let mut statuses = statuses_clone.lock().unwrap();
+                // Mark all hooks in this level as running
                 for hook in level {
-                    statuses.insert(hook.id.clone(), HookStatus::Running);
-                    futures.push(execute_hook_with_id(hook.clone(), files.to_vec()));
+                    status_tx_clone
+                        .send(StatusUpdate::Running(hook.id.clone()))
+                        .ok();
+                    futures.push(execute_hook_with_id(hook.clone(), files.clone()));
+                }
+
+                // Execute all hooks in this level in parallel
+                while let Some((hook_id, result)) = futures.next().await {
+                    status_tx_clone
+                        .send(StatusUpdate::Completed(hook_id.clone(), result.success))
+                        .ok();
+                    all_results.push(result);
                 }
             }
+        });
 
-            // Execute all hooks in this level in parallel
-            while let Some((hook_id, result)) = futures.next().await {
-                // Update status
-                let status = if result.success {
-                    HookStatus::Success
-                } else {
-                    HookStatus::Failed
-                };
-                statuses_clone.lock().unwrap().insert(hook_id, status);
-                all_results_clone.lock().unwrap().push(result);
-            }
-        }
+        all_results
     });
 
+    // Wait for execution to complete
+    let all_results = execution_thread.join().unwrap();
+
     // Stop animation thread
-    *should_stop.lock().unwrap() = true;
+    status_tx.send(StatusUpdate::Stop).ok();
     animation_thread.join().unwrap();
 
     // Clear the inline display
     clear_inline_status(hooks.len());
 
     let total_duration = start.elapsed();
-    let all_results = Arc::try_unwrap(all_results).unwrap().into_inner().unwrap();
     let all_passed = all_results.iter().all(|r| r.success);
 
     Ok(pre_commit_core::ExecutionResult {
@@ -403,8 +423,8 @@ fn display_inline_status(statuses: &HashMap<String, HookStatus>, hooks: &[Hook])
                     % SPINNER_FRAMES.len();
                 (SPINNER_FRAMES[frame_idx], "cyan")
             }
-            HookStatus::Success => ("✓", "green"),
-            HookStatus::Failed => ("✗", "red"),
+            HookStatus::Success => ("✅", "green"),
+            HookStatus::Failed => ("❌", "red"),
         };
 
         let line = format!("{} {} {}", prefix.cyan(), symbol, hook.name);
