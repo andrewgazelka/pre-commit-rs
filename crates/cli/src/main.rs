@@ -28,9 +28,9 @@ enum Commands {
         #[arg(short, long, default_value = ".pre-commit-config.yaml")]
         config: PathBuf,
 
-        /// Run hooks in parallel (respecting dependencies)
+        /// Run hooks sequentially (by default, runs in parallel)
         #[arg(short, long)]
-        parallel: bool,
+        sequential: bool,
 
         /// Files to check (if not provided, checks all staged files)
         files: Vec<PathBuf>,
@@ -135,7 +135,7 @@ enum HookStatus {
     Failed,
 }
 
-fn run_hooks(config_path: PathBuf, parallel: bool, files: Vec<PathBuf>) -> Result<()> {
+fn run_hooks(config_path: PathBuf, sequential: bool, files: Vec<PathBuf>) -> Result<()> {
     // Parse and validate config
     let config = parse_config_file(&config_path)?;
     validate_config(&config)?;
@@ -167,15 +167,15 @@ fn run_hooks(config_path: PathBuf, parallel: bool, files: Vec<PathBuf>) -> Resul
     // Build execution plan
     let plan = DagBuilder::new().build_plan(&hooks)?;
 
-    // Execute hooks with live status
-    let result = if parallel {
-        execute_with_live_status(plan, &hooks, &files_to_check)?
-    } else {
+    // Execute hooks with live status (parallel by default)
+    let result = if sequential {
         let executor = SyncExecutor::new();
         executor.execute(&hooks, &files_to_check)?
+    } else {
+        execute_with_live_status(plan, &hooks, &files_to_check)?
     };
 
-    // Display results
+    // Display results (only show output for failing hooks)
     for hook_result in &result.hooks {
         let status = if hook_result.success { "✓" } else { "✗" };
         println!(
@@ -183,11 +183,14 @@ fn run_hooks(config_path: PathBuf, parallel: bool, files: Vec<PathBuf>) -> Resul
             status, hook_result.hook_id, hook_result.duration_ms
         );
 
-        if !hook_result.stdout.is_empty() {
-            println!("  stdout: {}", hook_result.stdout.trim());
-        }
-        if !hook_result.stderr.is_empty() {
-            println!("  stderr: {}", hook_result.stderr.trim());
+        // Only show output for failed hooks
+        if !hook_result.success {
+            if !hook_result.stdout.is_empty() {
+                println!("  stdout: {}", hook_result.stdout.trim());
+            }
+            if !hook_result.stderr.is_empty() {
+                println!("  stderr: {}", hook_result.stderr.trim());
+            }
         }
     }
 
@@ -207,33 +210,59 @@ fn execute_with_live_status(
     files: &[PathBuf],
 ) -> Result<pre_commit_core::ExecutionResult> {
     use futures::stream::{FuturesUnordered, StreamExt};
-    use std::time::Instant;
+    use std::sync::{Arc, Mutex};
+    use std::time::{Duration, Instant};
 
-    // Track status of all hooks
-    let mut statuses: HashMap<String, HookStatus> = HashMap::new();
+    // Track status of all hooks (shared across threads)
+    let statuses: Arc<Mutex<HashMap<String, HookStatus>>> = Arc::new(Mutex::new(HashMap::new()));
     for hook in hooks {
-        statuses.insert(hook.id.clone(), HookStatus::Pending);
+        statuses.lock().unwrap().insert(hook.id.clone(), HookStatus::Pending);
     }
 
     let start = Instant::now();
-    let mut all_results = Vec::new();
+    let all_results = Arc::new(Mutex::new(Vec::new()));
+
+    // Print initial status (all pending) to reserve space
+    print_initial_status(hooks);
+
+    // Start background thread for continuous animation updates
+    let statuses_clone = Arc::clone(&statuses);
+    let hooks_clone = hooks.to_vec();
+    let should_stop = Arc::new(Mutex::new(false));
+    let should_stop_clone = Arc::clone(&should_stop);
+
+    let animation_thread = std::thread::spawn(move || {
+        loop {
+            if *should_stop_clone.lock().unwrap() {
+                break;
+            }
+
+            let statuses = statuses_clone.lock().unwrap();
+            display_inline_status(&statuses, &hooks_clone);
+            drop(statuses);
+
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    });
 
     // Create runtime for async execution
     let rt = tokio::runtime::Runtime::new().unwrap();
+    let statuses_clone = Arc::clone(&statuses);
+    let all_results_clone = Arc::clone(&all_results);
 
     rt.block_on(async {
         // Execute each level sequentially
         for level in &plan.levels {
             let mut futures = FuturesUnordered::new();
 
-            // Mark all hooks in this level as running and display
-            for hook in level {
-                statuses.insert(hook.id.clone(), HookStatus::Running);
-                futures.push(execute_hook_with_id(hook.clone(), files.to_vec()));
+            // Mark all hooks in this level as running
+            {
+                let mut statuses = statuses_clone.lock().unwrap();
+                for hook in level {
+                    statuses.insert(hook.id.clone(), HookStatus::Running);
+                    futures.push(execute_hook_with_id(hook.clone(), files.to_vec()));
+                }
             }
-
-            // Display current status
-            display_inline_status(&statuses, hooks);
 
             // Execute all hooks in this level in parallel
             while let Some((hook_id, result)) = futures.next().await {
@@ -243,20 +272,21 @@ fn execute_with_live_status(
                 } else {
                     HookStatus::Failed
                 };
-                statuses.insert(hook_id, status);
-
-                // Update display
-                display_inline_status(&statuses, hooks);
-
-                all_results.push(result);
+                statuses_clone.lock().unwrap().insert(hook_id, status);
+                all_results_clone.lock().unwrap().push(result);
             }
         }
     });
+
+    // Stop animation thread
+    *should_stop.lock().unwrap() = true;
+    animation_thread.join().unwrap();
 
     // Clear the inline display
     clear_inline_status(hooks.len());
 
     let total_duration = start.elapsed();
+    let all_results = Arc::try_unwrap(all_results).unwrap().into_inner().unwrap();
     let all_passed = all_results.iter().all(|r| r.success);
 
     Ok(pre_commit_core::ExecutionResult {
@@ -339,14 +369,22 @@ async fn execute_hook_with_id(hook: Hook, files: Vec<PathBuf>) -> (String, pre_c
     (hook_id, hook_result)
 }
 
+fn print_initial_status(hooks: &[Hook]) {
+    for (idx, hook) in hooks.iter().enumerate() {
+        let is_last = idx == hooks.len() - 1;
+        let prefix = if is_last { "└─" } else { "├─" };
+        println!("{} {} {}", prefix.cyan(), "●".dimmed(), hook.name.dimmed());
+    }
+}
+
 fn display_inline_status(statuses: &HashMap<String, HookStatus>, hooks: &[Hook]) {
     let mut stdout = io::stdout();
 
     // Move cursor up to the start of the status display
     if !hooks.is_empty() {
         execute!(stdout, cursor::MoveUp(hooks.len() as u16)).ok();
+        execute!(stdout, cursor::MoveToColumn(0)).ok();
     }
-    execute!(stdout, cursor::MoveToColumn(0)).ok();
 
     // Display each hook with its current status
     for (idx, hook) in hooks.iter().enumerate() {
@@ -465,7 +503,7 @@ fn install_hook(repo_path: PathBuf) -> Result<()> {
     let hook_content = format!(
         r#"#!/usr/bin/env sh
 # pre-commit-rs hook
-exec "{}" run -p
+exec "{}" run
 "#,
         exe_path
     );
@@ -504,10 +542,10 @@ fn main() -> Result<()> {
     match cli.command {
         Commands::Run {
             config,
-            parallel,
+            sequential,
             files,
         } => {
-            run_hooks(config, parallel, files)?;
+            run_hooks(config, sequential, files)?;
         }
         Commands::Install { repo } => {
             install_hook(repo)?;
