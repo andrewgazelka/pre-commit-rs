@@ -455,7 +455,7 @@ fn install_hook(repo_path: PathBuf) -> Result<()> {
 
     let hook_content = r#"#!/bin/sh
 # pre-commit-rs hook
-exec pre-commit-rs run
+exec pre-commit-rs run -p
 "#;
 
     fs::write(&pre_commit_hook, hook_content)?;
