@@ -32,6 +32,10 @@ enum Commands {
         #[arg(short, long)]
         sequential: bool,
 
+        /// Run hooks on all files in the repository
+        #[arg(long)]
+        all_files: bool,
+
         /// Files to check (if not provided, checks all staged files)
         files: Vec<PathBuf>,
     },
@@ -56,6 +60,21 @@ fn get_staged_files() -> Result<Vec<PathBuf>> {
 
     if !output.status.success() {
         anyhow::bail!("Failed to get staged files from git");
+    }
+
+    let files = String::from_utf8(output.stdout)?
+        .lines()
+        .map(PathBuf::from)
+        .collect();
+
+    Ok(files)
+}
+
+fn get_all_files() -> Result<Vec<PathBuf>> {
+    let output = process::Command::new("git").args(["ls-files"]).output()?;
+
+    if !output.status.success() {
+        anyhow::bail!("Failed to get all files from git");
     }
 
     let files = String::from_utf8(output.stdout)?
@@ -135,7 +154,12 @@ enum HookStatus {
     Failed,
 }
 
-fn run_hooks(config_path: PathBuf, sequential: bool, files: Vec<PathBuf>) -> Result<()> {
+fn run_hooks(
+    config_path: PathBuf,
+    sequential: bool,
+    all_files: bool,
+    files: Vec<PathBuf>,
+) -> Result<()> {
     // Parse and validate config
     let config = parse_config_file(&config_path)?;
     validate_config(&config)?;
@@ -149,10 +173,12 @@ fn run_hooks(config_path: PathBuf, sequential: bool, files: Vec<PathBuf>) -> Res
     }
 
     // Get files to check
-    let files_to_check = if files.is_empty() {
-        get_staged_files()?
-    } else {
+    let files_to_check = if !files.is_empty() {
         files
+    } else if all_files {
+        get_all_files()?
+    } else {
+        get_staged_files()?
     };
 
     println!(
@@ -566,9 +592,10 @@ fn main() -> Result<()> {
         Commands::Run {
             config,
             sequential,
+            all_files,
             files,
         } => {
-            run_hooks(config, sequential, files)?;
+            run_hooks(config, sequential, all_files, files)?;
         }
         Commands::Install { repo } => {
             install_hook(repo)?;
