@@ -458,10 +458,17 @@ fn install_hook(repo_path: PathBuf) -> Result<()> {
 
     let pre_commit_hook = hooks_dir.join("pre-commit");
 
-    let hook_content = r#"#!/bin/sh
+    // Get the absolute path to the current executable
+    let current_exe = std::env::current_exe()?;
+    let exe_path = current_exe.display();
+
+    let hook_content = format!(
+        r#"#!/usr/bin/env sh
 # pre-commit-rs hook
-exec pre-commit-rs run -p
-"#;
+exec "{}" run -p
+"#,
+        exe_path
+    );
 
     fs::write(&pre_commit_hook, hook_content)?;
 
