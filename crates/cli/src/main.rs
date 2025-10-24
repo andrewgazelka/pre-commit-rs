@@ -446,9 +446,14 @@ mod shell_words {
 }
 
 fn install_hook(repo_path: PathBuf) -> Result<()> {
-    let hooks_dir = repo_path.join(".git").join("hooks");
-    if !hooks_dir.exists() {
+    let git_dir = repo_path.join(".git");
+    if !git_dir.exists() {
         anyhow::bail!("Not a git repository");
+    }
+
+    let hooks_dir = git_dir.join("hooks");
+    if !hooks_dir.exists() {
+        fs::create_dir(&hooks_dir)?;
     }
 
     let pre_commit_hook = hooks_dir.join("pre-commit");
