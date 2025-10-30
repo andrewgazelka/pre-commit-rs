@@ -585,25 +585,25 @@ fn uninstall_hook(repo_path: PathBuf) -> Result<()> {
     Ok(())
 }
 
-fn main() -> Result<()> {
+fn main() -> process::ExitCode {
     let cli = Cli::parse();
 
-    match cli.command {
+    let result = match cli.command {
         Commands::Run {
             config,
             sequential,
             all_files,
             files,
-        } => {
-            run_hooks(config, sequential, all_files, files)?;
-        }
-        Commands::Install { repo } => {
-            install_hook(repo)?;
-        }
-        Commands::Uninstall { repo } => {
-            uninstall_hook(repo)?;
+        } => run_hooks(config, sequential, all_files, files),
+        Commands::Install { repo } => install_hook(repo),
+        Commands::Uninstall { repo } => uninstall_hook(repo),
+    };
+
+    match result {
+        Ok(()) => process::ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            process::ExitCode::FAILURE
         }
     }
-
-    Ok(())
 }
